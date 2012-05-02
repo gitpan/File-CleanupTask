@@ -53,7 +53,6 @@ use_ok('File::CleanupTask');
         {
             'conf'     => $task_file,   
             'taskname' => $task_name,
-	    'verbose'  => 1,
         }
     );
     
