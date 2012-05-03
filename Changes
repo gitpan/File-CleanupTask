@@ -1,5 +1,10 @@
 Revision history for File-CleanupTask
 
+0.05    Thu May  3 10:04:18 BST 2012
+        * using File::Path::mkpath/rmtree instead of 
+          File::Path::make_path/remove_tree, as the longer version is not
+          supported in older File::Path (e.g., v2.04)
+
 0.04    Wed May  2 11:30:07 BST 2012
         * disabled a verbose test that was mixing with the TAP output
         * relaxed any requirement on package version to test on more platforms
