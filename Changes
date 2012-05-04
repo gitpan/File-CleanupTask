@@ -1,5 +1,8 @@
 Revision history for File-CleanupTask
 
+0.06    Fri May  4 10:02:09 BST 2012
+        * fixed warnings
+
 0.05    Thu May  3 10:04:18 BST 2012
         * using File::Path::mkpath/rmtree instead of 
           File::Path::make_path/remove_tree, as the longer version is not
