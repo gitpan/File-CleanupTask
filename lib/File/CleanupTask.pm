@@ -22,11 +22,11 @@ File::CleanupTask - Delete/Backup files on a task-based configuration
 
 =head1 VERSION
 
-Version 0.08
+Version 0.09
 
 =cut
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 
 =head1 SYNOPSIS
@@ -206,17 +206,18 @@ creates a new File::CleanupTask object, an then calls C<run>.
 
 Options include I<dryrun>, I<verbose>, I<task> and I<conf>.
 
-=head3 dryrun
-    just build and show the plan, nothing will be executed or deleted.
 
-=head3 verbose
-    produce more verbose output.
+=over
 
-=head3 task
-    optional, will result in the execution of the specified task.
+=item I<dryrun>: just build and show the plan, nothing will be executed or deleted.
 
-=head3 conf
-    the path to the .tasks configuration file.
+=item I<verbose>: produce more verbose output.
+
+=item I<task>: optional, will result in the execution of the specified task.
+
+=item I<path>: the path to the .tasks configuration file.
+
+=back
 
 =cut
 sub command_line_run {
@@ -810,7 +811,7 @@ sub _build_plan {
                     ($action, $reason) = ('nothing', 'no prune empty');
                 }
                 elsif ($self->_never_delete_contains($rh_never_delete, $dir)) {
-                    ($action, $reason) = ('nothing', 'never_deleteed');
+                    ($action, $reason) = ('nothing', 'never_deleted');
                 }
                 elsif ($ndel < $nf) {
                     ($action, $reason) = (
@@ -1197,7 +1198,7 @@ sub _execute_plan {
                 else {
                     $self->_info("mv $from to $to_file");
                     if (!move( $from, $to_file ) ){
-                        $self->_warn("Unable to move. Dieing...");
+                        $self->_warn("Unable to move. Dying...");
                         die sprintf("Unable to move $from to $to_file: %s", $!);
                     }
                 }
