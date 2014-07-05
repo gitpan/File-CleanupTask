@@ -1,5 +1,5 @@
 {
-   "abstract" : "Delete/Backup files on a task-based configuration",
+   "abstract" : "Delete or back up files using a task-based configuration",
    "author" : [
       "Savio Dimatteo <savio@lokku.com>"
    ],
@@ -55,7 +55,7 @@
    "provides" : {
       "File::CleanupTask" : {
          "file" : "lib/File/CleanupTask.pm",
-         "version" : "0.09"
+         "version" : "0.10"
       }
    },
    "release_status" : "stable",
@@ -64,5 +64,5 @@
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "0.09"
+   "version" : "0.10"
 }

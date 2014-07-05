@@ -4,19 +4,21 @@ use warnings;
 use Test::More;
 use Test::File qw/file_not_exists_ok/;
 use Config::Simple qw//;
-use Cwd qw/abs_path/;
+use Cwd qw/abs_path cwd/;
 use File::Spec  qw/catpath splitpath splitdir/;
 use File::Path  qw/rmtree mkpath/;
 use File::Temp  qw/tempdir tempfile/;
 use File::Touch qw//;
 use File::Find::Rule qw//;
+use File::Find qw//;
 
 ##
 ## Test Setup - Create a .task file for this test that points to a temporary
 ##              test root, then load the task file.
 ##
-my $test_root = tempdir("file_cleanup_test_XXXXX", CLEANUP => 1, TMPDIR => 1);
+my $test_root = tempdir("file_cleanup_test_XXXXX", CLEANUP => 1);
 my $task_file = _create_task_file($test_root);
+my $cwd       = cwd();
 
 my $Config = Config::Simple->new(syntax=>'ini');
 $Config->read($task_file);
@@ -96,7 +98,7 @@ use_ok('File::CleanupTask');
         ##
         my $symlink_success = _make_symlinks( [ 
                 { symlink => "${dir_keep_if_linked_in}/code",
-                  target  => "${dir_to_cleanup}//52873.activated",
+                  target  => "$cwd/${dir_to_cleanup}//52873.activated",
                 },
                 { symlink => "${dir_keep_if_linked_in}/previous",
                   target  => "releases//52808.activated",
@@ -297,13 +299,13 @@ use_ok('File::CleanupTask');
         ##
         my $symlink_success = _make_symlinks( [ 
                 { symlink => "${dir_keep_if_linked_in}/b.lnk",
-                  target  => "${dir_to_cleanup}/txt/b.txt",
+                  target  => "$cwd/${dir_to_cleanup}/txt/b.txt",
                 },
                 { symlink => "${dir_keep_if_linked_in}/c.lnk",
-                  target  => "${dir_to_cleanup}/gz/c.txt.gz",
+                  target  => "$cwd/${dir_to_cleanup}/gz/c.txt.gz",
                 },
                 { symlink => "${dir_to_cleanup}/txt/a.lnk",    
-                  target  => "${dir_to_cleanup}/gz/a.txt.gz",
+                  target  => "$cwd/${dir_to_cleanup}/gz/a.txt.gz",
                 },
             ]
         );
@@ -364,7 +366,7 @@ use_ok('File::CleanupTask');
 
 
 ##
-## TEST E - Directories are pruned correctly (non-recursive mode)
+## TEST E - Directories are pruned correctly (non-recursive mode, max_days=0)
 ##
 {
     my $cleanup = File::CleanupTask->new({
@@ -379,6 +381,7 @@ use_ok('File::CleanupTask');
         /foo/2/c.txt [new]
         /foo/3/ [new]
         /fie [new]
+        /xfoobar/ [newR]
     )]);
     
     $cleanup->run();
@@ -398,14 +401,57 @@ use_ok('File::CleanupTask');
     is_deeply(
         \@dirs_after_cleanup, 
         \@expected, 
-        'TEST E - Test prune_empty_directories works correctly (non-recursive)'
-    );
+        'TEST E - Test prune_empty_directories works correctly (non-recursive, max_days=0)'
+    ) or diag(_dump_arrays(\@dirs_after_cleanup, \@expected));
     
     _subtest_ended();
 }
 
 ##
-## TEST F - Directories are pruned correctly (recursive mode)
+## TEST E1 - Directories are pruned correctly (non-recursive mode, max_days=7)
+##
+{
+    my $cleanup = File::CleanupTask->new({
+        conf     => $task_file,
+        taskname => 'TEST_E1'
+    });
+    _make_structure($test_root, [qw(
+        /empty/a/1/2/ [new]
+        /empty/b/1/2/4/5/6/ [new]
+        /foo/1/a.txt [new]
+        /foo/2/b.txt [new]
+        /foo/2/c.txt [new]
+        /foo/3/ [new]
+        /fie [new]
+        /bla [old]
+    )]);
+    
+    $cleanup->run();
+    
+    my @dirs_after_cleanup = sort File::Find::Rule->in( $test_root );
+    
+    ## - - - Moment of truth - - -
+    my @expected = _make_expected_list($test_root, [qw(
+        /empty/a/1/2/
+        /empty/b/1/2/4/5/6/
+        /foo/1/a.txt
+        /foo/2/b.txt
+        /foo/2/c.txt
+        /foo/3/
+        /fie
+    )]);
+
+    is_deeply(
+        \@dirs_after_cleanup, 
+        \@expected, 
+        'TEST E1 - Test prune_empty_directories works correctly (non-recursive, max_days=7)'
+    ) or diag(_dump_arrays(\@dirs_after_cleanup, \@expected));
+    
+    _subtest_ended();
+}
+
+##
+## TEST F - Directories are pruned correctly (recursive mode, max_days=0)
 ##
 {
     my $cleanup = File::CleanupTask->new({
@@ -436,8 +482,53 @@ use_ok('File::CleanupTask');
     is_deeply(
         \@dirs_after_cleanup,
         \@expected, 
-        'TEST F - Test prune_empty_directories works correctly (recursive)'
+        'TEST F - Test prune_empty_directories works correctly (recursive, max_days=0)'
     );
+
+    _subtest_ended();
+}
+
+##
+## TEST F1 - Directories are pruned correctly (recursive mode, max_days=7)
+##
+{
+    my $cleanup = File::CleanupTask->new({
+        conf     => $task_file,
+        taskname => 'TEST_F1',
+    });
+    _make_structure($test_root, [qw(
+        /empty/a/1/2/ [new]
+        /empty/b/1/2/4/5/6/ [new]
+        /empty/c/1/2 [old]
+        /empty/d/    [oldR]
+        /foo/1/a.txt [new]
+        /foo/2/b.txt [new] 
+        /foo/2/c.txt [new]
+        /foo/3/      [new]
+        /fie         [new]
+        /bla         [old]
+    )]);
+    
+    $cleanup->run();
+    
+    my @dirs_after_cleanup = sort File::Find::Rule->in( $test_root );
+    
+    ## - - - Moment of truth - - -
+    my @expected = _make_expected_list($test_root, [qw(
+        /empty/a/1/2/
+        /empty/b/1/2/4/5/6/
+        /foo/1/a.txt
+        /foo/2/b.txt
+        /foo/2/c.txt
+        /foo/3/
+        /fie
+    )]);
+
+    is_deeply(
+        \@dirs_after_cleanup,
+        \@expected, 
+        'TEST F1 - Test prune_empty_directories works correctly (recursive, max_days=7)'
+    ) or diag(_dump_arrays(\@dirs_after_cleanup, \@expected));
 
     _subtest_ended();
 }
@@ -525,22 +616,22 @@ use_ok('File::CleanupTask');
     {
         my $symlink_success = _make_symlinks( [ 
                 { symlink => "${dir_keep_if_linked_in}/in",
-                  target  => "${test_root}/home/geobuild/common/geo/lookups/in.geov2.20120307.52873",
+                  target  => "$cwd/${test_root}/home/geobuild/common/geo/lookups/in.geov2.20120307.52873",
                 },
                 { symlink => "${dir_keep_if_linked_in}/br",
-                  target  => "${test_root}/home/geobuild/common/geo/lookups/br.geov2.20120308.52893",
+                  target  => "$cwd/${test_root}/home/geobuild/common/geo/lookups/br.geov2.20120308.52893",
                 },
                 { symlink => "${dir_keep_if_linked_in}/au",    
-                  target  => "${test_root}/home/geobuild/common/geo/lookups/au.geov2.20120309.52932",
+                  target  => "$cwd/${test_root}/home/geobuild/common/geo/lookups/au.geov2.20120309.52932",
                 },
                 { symlink => "${dir_keep_if_linked_in}/fr",    
-                  target  => "${test_root}/home/geobuild/common/geo/lookups/fr.geov2.20120312.52975",
+                  target  => "$cwd/${test_root}/home/geobuild/common/geo/lookups/fr.geov2.20120312.52975",
                 },
                 { symlink => "${dir_keep_if_linked_in}/de",
                   target  => "de.geov2.20120312.52975",
                 },
                 { symlink => "${dir_keep_if_linked_in}/uk",
-                  target  => "${test_root}/home/geobuild/common/geo/lookups/uk.geov2.20120313.53011",
+                  target  => "$cwd/${test_root}/home/geobuild/common/geo/lookups/uk.geov2.20120313.53011",
                 },
                 { symlink => "${dir_keep_if_linked_in}/es",
                   target  => "es.geov2.20120313.53011",
@@ -692,16 +783,16 @@ use_ok('File::CleanupTask');
         ##
         my $symlink_success = _make_symlinks( [ 
                 { symlink => "${test_root}/control_area/x.lnk",
-                  target  => "${test_root}/x",
+                  target  => "$cwd/${test_root}/x",
                 },
                 { symlink => "${test_root}/control_area/y.lnk",
-                  target  => "${test_root}/y",
+                  target  => "$cwd/${test_root}/y",
                 },
                 { symlink => "${test_root}/control_area/z.lnk",
-                  target  => "${test_root}/z",
+                  target  => "$cwd/${test_root}/z",
                 },
                 { symlink => "${test_root}/control_area/xxxx.lnk",  # a broken symlink
-                  target  => "${test_root}/xxxx",
+                  target  => "$cwd/${test_root}/xxxx",
                   broken  => 1,
                 },
         ]);
@@ -762,7 +853,7 @@ use_ok('File::CleanupTask');
         ##
         my $symlink_success = _make_symlinks( [ 
                 { symlink => "${test_root}/x.lnk",
-                  target  => "${test_root}/old/files/2",
+                  target  => "$cwd/${test_root}/old/files/2",
                 },
         ]);
 
@@ -811,7 +902,7 @@ use_ok('File::CleanupTask');
     {
 	my $symlink_success = _make_symlinks( [ 
 	    { symlink => "$test_root/b",
-	      target  => "$test_root/a",
+	      target  => "$cwd/$test_root/a",
 	    },
 	]);
 
@@ -926,10 +1017,10 @@ use_ok('File::CleanupTask');
         ##
         my $symlink_success = _make_symlinks( [ 
                 { symlink => "$test_root/homelink",
-                  target  => "$test_root/home",
+                  target  => "$cwd/$test_root/home",
                 },
                 { symlink => "$test_root/home/test/code",
-                  target  => "${dir_to_cleanup}//52873.activated/",
+                  target  => "$cwd/${dir_to_cleanup}//52873.activated/",
                 },
                 { symlink => "$test_root/home/test/previous",
                   target  => "releases//52808.activated",
@@ -1035,10 +1126,10 @@ use_ok('File::CleanupTask');
         ##
         my $symlink_success = _make_symlinks( [ 
                 { symlink => "$test_root/homelink",
-                  target  => "$test_root/home",
+                  target  => "$cwd/$test_root/home",
                 },
                 { symlink => "$test_root/home/test/code",
-                  target  => "${dir_to_cleanup}//52873.activated/",
+                  target  => "$cwd/${dir_to_cleanup}//52873.activated/",
                 },
                 { symlink => "$test_root/home/test/previous",
                   target  => "releases//52808.activated",
@@ -1047,10 +1138,10 @@ use_ok('File::CleanupTask');
                   target  => "releases/52930",
                 },
                 { symlink => "$test_root/home/test/releases/a/a.lnk",
-                  target  => "$test_root/home/test/releases/b/",
+                  target  => "$cwd/$test_root/home/test/releases/b/",
                 },
                 { symlink => "$test_root/home/test/releases/b/b.lnk",
-                  target  => "$test_root/home/test/releases/a/",
+                  target  => "$cwd/$test_root/home/test/releases/a/",
                 },
             ]
         );
@@ -1124,7 +1215,7 @@ use_ok('File::CleanupTask');
     {
         my $symlink_success = _make_symlinks( [ 
             { symlink => "$test_root/a/b/c/d/x.lnk",
-              target  => "$test_root/x/w.txt",
+              target  => "$cwd/$test_root/x/w.txt",
             },
         ]);
         if (!$symlink_success) {
@@ -1167,10 +1258,10 @@ use_ok('File::CleanupTask');
     {
         my $symlink_success = _make_symlinks( [ 
             { symlink => "$test_root/a/b/c/d/e/f/g/h/i/l/x.lnk",
-              target  => "$test_root/x/w.txt",
+              target  => "$cwd/$test_root/x/w.txt",
             },
             { symlink => "$test_root/a/b/c/d/e/e1/e2/e3/x.lnk",
-              target  => "$test_root/x/w.txt",
+              target  => "$cwd/$test_root/x/w.txt",
             },
         ]);
         if (!$symlink_success) {
@@ -1219,10 +1310,10 @@ use_ok('File::CleanupTask');
     {
         my $symlink_success = _make_symlinks( [ 
             { symlink => "$test_root/a/b/c/d/e/f/g/h/i/l/x.lnk",
-              target  => "$test_root/x/w.unwanted",
+              target  => "$cwd/$test_root/x/w.unwanted",
             },
             { symlink => "$test_root/a/b/c/d/e/e1/e2/e3/x.lnk",
-              target  => "$test_root/x/w.unwanted",
+              target  => "$cwd/$test_root/x/w.unwanted",
             },
         ]);
         if (!$symlink_success) {
@@ -1325,7 +1416,7 @@ use_ok('File::CleanupTask');
         ##
         my $symlink_success = _make_symlinks( [ 
                 { symlink => "${dir_keep_if_linked_in}/code",
-                  target  => "${dir_to_cleanup}//52873.activated",
+                  target  => "$cwd/${dir_to_cleanup}//52873.activated",
                 },
                 { symlink => "${dir_keep_if_linked_in}/previous",
                   target  => "releases//52808.activated",
@@ -1669,6 +1760,32 @@ sub _make_structure {
         );
     }
 
+    # The code also looks at the mtime of directories when
+    # prune_empty_directories is 1. To keep things simple, we'll make sure that
+    # each directory's mtime is equal to the most recent mtime of its children
+
+    File::Find::finddepth(sub {
+        return if ! -d $_;
+        my $greatest_epoch = undef;
+        opendir my $dh, $_ or die;
+        while (my $f = readdir($dh)) {
+            next if $f eq '.' || $f eq '..';
+            my $mtime = (stat($_ . "/" . $f))[9];
+            if (! defined($greatest_epoch) || $greatest_epoch < $mtime) {
+                $greatest_epoch = $mtime;
+            }
+        }
+        closedir $dh or die;
+        if ($greatest_epoch) {
+            my $toucher = File::Touch->new(
+                atime => $greatest_epoch,
+                mtime => $greatest_epoch,
+            );
+            $toucher->touch($_);
+        }
+        return;
+    }, $base_dir);
+
     return @all_files;
 }
 
@@ -1736,8 +1853,23 @@ sub _create_task_file {
     recursive               = 0
     do_not_delete           = '.*[.]txt\$'
 
+[TEST_E1]
+    max_days                = 7
+    path                    = \'$testdir_path\'
+    prune_empty_directories = 1
+    recursive               = 0
+    do_not_delete           = '.*[.]txt\$'
+
 [TEST_F]
     max_days                = 0
+    path                    = \'$testdir_path\'
+    prune_empty_directories = 1
+    recursive               = 1
+    do_not_delete           = '.*[.]txt\$'
+    enable_symlinks_integrity_in_path = 1
+
+[TEST_F1]
+    max_days                = 7
     path                    = \'$testdir_path\'
     prune_empty_directories = 1
     recursive               = 1
@@ -1832,7 +1964,7 @@ sub _create_task_file {
     pattern                 = /locations_cache_si_[0-9]{4}_/
 EOF
 
-    my ($fh, $taskfile_path) = tempfile("taskfile_XXXX", TMPDIR=>1, CLEANUP=>1);
+    my ($fh, $taskfile_path) = tempfile("taskfile_XXXX", TMPDIR => 1);
     print $fh $config_content;
     close($fh);
 
